@@ -60,7 +60,7 @@ def main(_):
     # Set up environment and dataset.
     config = FLAGS.agent
     
-    env, train_dataset, val_dataset = make_env_and_datasets(FLAGS.env_name, frame_stack=config['frame_stack'])
+    env, train_dataset, val_dataset = make_env_and_datasets(FLAGS.env_name, dataset_path=FLAGS.dataset_path, frame_stack=config['frame_stack'])
 
     dataset_class = {
         'GCDataset': GCDataset,
