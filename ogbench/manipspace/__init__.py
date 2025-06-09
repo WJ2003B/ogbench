@@ -83,6 +83,14 @@ register(
         **visual_dict,
     ),
 )
+register(
+    id='cube-octuple-v0',
+    entry_point='ogbench.manipspace.envs.cube_env:CubeEnv',
+    max_episode_steps=1500,
+    kwargs=dict(
+        env_type='octuple',
+    ),
+)
 
 register(
     id='scene-v0',
@@ -256,6 +264,16 @@ for task_id in [None, 1, 2, 3, 4, 5]:
         kwargs=dict(
             env_type='quadruple',
             **visual_dict,
+            reward_task_id=reward_task_id,
+            **cube_singletask_dict,
+        ),
+    )
+    register(
+        id=f'cube-octuple-singletask{task_suffix}-v0',
+        entry_point='ogbench.manipspace.envs.cube_env:CubeEnv',
+        max_episode_steps=1500,
+        kwargs=dict(
+            env_type='octuple',
             reward_task_id=reward_task_id,
             **cube_singletask_dict,
         ),

@@ -1,5 +1,8 @@
 # Change log
 
+## ogbench 1.1.3 (2025-06-03)
+- Add the `cube-octuple` task.
+
 ## ogbench 1.1.2 (2025-03-30)
 - Improve compatibility with `gymnasium`.
 

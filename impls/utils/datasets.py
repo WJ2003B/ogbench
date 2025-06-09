@@ -268,12 +268,15 @@ class GCDataset:
             traj_goal_idxs = np.round(
                 (np.minimum(idxs + 1, final_state_idxs) * distances + final_state_idxs * (1 - distances))
             ).astype(int)
-        goal_idxs = np.where(
-            np.random.rand(batch_size) < p_trajgoal / (1.0 - p_curgoal + 1e-6), traj_goal_idxs, random_goal_idxs
-        )
+        if p_curgoal == 1.0:
+            goal_idxs = idxs
+        else:
+            goal_idxs = np.where(
+                np.random.rand(batch_size) < p_trajgoal / (1.0 - p_curgoal), traj_goal_idxs, random_goal_idxs
+            )
 
-        # Goals at the current state.
-        goal_idxs = np.where(np.random.rand(batch_size) < p_curgoal, idxs, goal_idxs)
+            # Goals at the current state.
+            goal_idxs = np.where(np.random.rand(batch_size) < p_curgoal, idxs, goal_idxs)
 
         return goal_idxs
 

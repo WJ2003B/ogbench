@@ -448,7 +448,7 @@ def make_maze_env(loco_env_type, maze_env_type, *args, **kwargs):
                 return frame
 
         def get_oracle_rep(self):
-            """Return the oracle goal representation (i.e., the goal position) of the current state."""
+            """Return the oracle goal representation (i.e., the goal position)."""
             return np.array(self.cur_goal_xy)
 
         def set_goal(self, goal_ij=None, goal_xy=None):

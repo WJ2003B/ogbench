@@ -407,6 +407,29 @@ For example, to train an Ant expert policy, you can run the following command in
 python main_sac.py --env_name=online-ant-xy-v0
 ```
 
+# Additional Features
+
+- We support `-oraclerep` variants, which provide ground-truth goal representations
+(e.g., in `antmaze-large-navigate-oraclerep-v0`,
+the goal is defined only by the x-y position, not including the agent's proprioceptive states).
+- We also provide the `cube-octuple` task, which involves eight cubes.
+While we do not provide a default dataset for this task, you may download the 100M-sized dataset below.
+- For some tasks, we provide larger datasets with 100M transitions, collected by the same scripted policy as the original datasets.
+They can be manually downloaded from the following links (see [this repository](https://github.com/seohongpark/horizon-reduction) for examples of how to load these datasets):
+  - `humanoidmaze-giant-navigate-100m-v0`: https://rail.eecs.berkeley.edu/datasets/ogbench/humanoidmaze-giant-navigate-100m-v0
+  - `cube-double-play-100m-v0`: https://rail.eecs.berkeley.edu/datasets/ogbench/cube-double-play-100m-v0
+  - `cube-triple-play-100m-v0`: https://rail.eecs.berkeley.edu/datasets/ogbench/cube-triple-play-100m-v0
+  - `cube-quadruple-play-100m-v0`: https://rail.eecs.berkeley.edu/datasets/ogbench/cube-quadruple-play-100m-v0
+  - `cube-quadruple-noisy-100m-v0`: https://rail.eecs.berkeley.edu/datasets/ogbench/cube-quadruple-noisy-100m-v0
+  - `cube-octuple-play-100m-v0`: https://rail.eecs.berkeley.edu/datasets/ogbench/cube-octuple-play-100m-v0
+  - `scene-play-100m-v0`: https://rail.eecs.berkeley.edu/datasets/ogbench/scene-play-100m-v0
+  - `puzzle-3x3-play-100m-v0`: https://rail.eecs.berkeley.edu/datasets/ogbench/puzzle-3x3-play-100m-v0
+  - `puzzle-4x4-play-100m-v0`: https://rail.eecs.berkeley.edu/datasets/ogbench/puzzle-4x4-play-100m-v0
+  - `puzzle-4x5-play-100m-v0`: https://rail.eecs.berkeley.edu/datasets/ogbench/puzzle-4x5-play-100m-v0
+  - `puzzle-4x6-play-100m-v0`: https://rail.eecs.berkeley.edu/datasets/ogbench/puzzle-4x6-play-100m-v0
+
+  
+
 # Acknowledgments
 
 This codebase is inspired by or partly uses code from the following repositories:
@@ -418,8 +441,8 @@ This codebase is inspired by or partly uses code from the following repositories
 - [Powderworld](https://github.com/kvfrans/powderworld) for the Powderworld environment.
 - [NumPyConv2D](https://github.com/99991/NumPyConv2D) for the NumPy Conv2D implementation in the Powderworld environment.
 - [jaxrl_m](https://github.com/dibyaghosh/jaxrl_m), [rlbase](https://github.com/kvfrans/rlbase_stable),
-  [HIQL](https://github.com/seohongpark/HIQL), and [cmd-notebook](https://github.com/vivekmyers/cmd-notebook)
-  for JAX-based implementations of RL algorithms.
+[HIQL](https://github.com/seohongpark/HIQL), and [cmd-notebook](https://github.com/vivekmyers/cmd-notebook)
+for JAX-based implementations of RL algorithms.
 
 Special thanks to [Kevin Zakka](https://kzakka.com/) for providing the initial codebase for the manipulation environments.
 

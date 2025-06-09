@@ -1,3 +1,4 @@
+import pathlib
 from collections import defaultdict
 
 import gymnasium
@@ -87,6 +88,7 @@ def main(_):
 
     train_path = FLAGS.save_path
     val_path = FLAGS.save_path.replace('.npz', '-val.npz')
+    pathlib.Path(train_path).parent.mkdir(parents=True, exist_ok=True)
 
     # Split the dataset into training and validation sets.
     train_dataset = {}

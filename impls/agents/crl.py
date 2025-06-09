@@ -50,6 +50,7 @@ class CRLAgent(flax.struct.PyTreeNode):
         contrastive_loss = jnp.mean(contrastive_loss)
 
         # Compute additional statistics.
+        v = jnp.exp(v)
         logits = jnp.mean(logits, axis=-1)
         correct = jnp.argmax(logits, axis=1) == jnp.argmax(I, axis=1)
         logits_pos = jnp.sum(logits * I) / jnp.sum(I)
@@ -69,22 +70,10 @@ class CRLAgent(flax.struct.PyTreeNode):
 
     def actor_loss(self, batch, grad_params, rng=None):
         """Compute the actor loss (AWR or DDPG+BC)."""
-        # Maximize log Q if actor_log_q is True (which is default).
-        if self.config['actor_log_q']:
-
-            def value_transform(x):
-                return jnp.log(jnp.maximum(x, 1e-6))
-        else:
-
-            def value_transform(x):
-                return x
-
         if self.config['actor_loss'] == 'awr':
             # AWR loss.
-            v = value_transform(self.network.select('value')(batch['observations'], batch['actor_goals']))
-            q1, q2 = value_transform(
-                self.network.select('critic')(batch['observations'], batch['actor_goals'], batch['actions'])
-            )
+            v = self.network.select('value')(batch['observations'], batch['actor_goals'])
+            q1, q2 = self.network.select('critic')(batch['observations'], batch['actor_goals'], batch['actions'])
             q = jnp.minimum(q1, q2)
             adv = q - v
 
@@ -119,9 +108,7 @@ class CRLAgent(flax.struct.PyTreeNode):
                 q_actions = jnp.clip(dist.mode(), -1, 1)
             else:
                 q_actions = jnp.clip(dist.sample(seed=rng), -1, 1)
-            q1, q2 = value_transform(
-                self.network.select('critic')(batch['observations'], batch['actor_goals'], q_actions)
-            )
+            q1, q2 = self.network.select('critic')(batch['observations'], batch['actor_goals'], q_actions)
             q = jnp.minimum(q1, q2)
 
             # Normalize Q values by the absolute mean to make the loss scale invariant.
@@ -240,7 +227,7 @@ class CRLAgent(flax.struct.PyTreeNode):
                 latent_dim=config['latent_dim'],
                 layer_norm=config['layer_norm'],
                 ensemble=True,
-                value_exp=True,
+                value_exp=False,
                 state_encoder=encoders.get('critic_state'),
                 goal_encoder=encoders.get('critic_goal'),
                 action_dim=action_dim,
@@ -251,7 +238,7 @@ class CRLAgent(flax.struct.PyTreeNode):
                 latent_dim=config['latent_dim'],
                 layer_norm=config['layer_norm'],
                 ensemble=True,
-                value_exp=True,
+                value_exp=False,
                 state_encoder=encoders.get('critic_state'),
                 goal_encoder=encoders.get('critic_goal'),
             )
@@ -263,7 +250,7 @@ class CRLAgent(flax.struct.PyTreeNode):
                 latent_dim=config['latent_dim'],
                 layer_norm=config['layer_norm'],
                 ensemble=False,
-                value_exp=True,
+                value_exp=False,
                 state_encoder=encoders.get('value_state'),
                 goal_encoder=encoders.get('value_goal'),
             )
@@ -316,7 +303,6 @@ def get_config():
             discount=0.99,  # Discount factor.
             actor_loss='ddpgbc',  # Actor loss type ('awr' or 'ddpgbc').
             alpha=0.1,  # Temperature in AWR or BC coefficient in DDPG+BC.
-            actor_log_q=True,  # Whether to maximize log Q (True) or Q itself (False) in the actor loss.
             const_std=True,  # Whether to use constant standard deviation for the actor.
             discrete=False,  # Whether the action space is discrete.
             encoder=ml_collections.config_dict.placeholder(str),  # Visual encoder name (None, 'impala_small', etc.).

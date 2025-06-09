@@ -1,3 +1,4 @@
+import pathlib
 from collections import defaultdict
 
 import gymnasium
@@ -104,6 +105,8 @@ def main(_):
                 p_stack = np.random.uniform(0.05, 0.35)
             elif 'quadruple' in FLAGS.env_name:
                 p_stack = np.random.uniform(0.1, 0.5)
+            elif 'octuple' in FLAGS.env_name:
+                p_stack = np.random.uniform(0.0, 0.35)
             else:
                 p_stack = 0.5
 
@@ -180,6 +183,7 @@ def main(_):
 
     train_path = FLAGS.save_path
     val_path = FLAGS.save_path.replace('.npz', '-val.npz')
+    pathlib.Path(train_path).parent.mkdir(parents=True, exist_ok=True)
 
     # Split the dataset into training and validation sets.
     train_dataset = {}
