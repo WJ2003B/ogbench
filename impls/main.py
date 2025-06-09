@@ -22,6 +22,7 @@ FLAGS = flags.FLAGS
 flags.DEFINE_string('run_group', 'Debug', 'Run group.')
 flags.DEFINE_integer('seed', 0, 'Random seed.')
 flags.DEFINE_string('env_name', 'antmaze-large-navigate-v0', 'Environment (dataset) name.')
+flags.DEFINE_string('dataset_path', None, 'Dataset path.')
 flags.DEFINE_string('save_dir', 'exp/', 'Save directory.')
 flags.DEFINE_string('restore_path', None, 'Restore path.')
 flags.DEFINE_integer('restore_epoch', None, 'Restore epoch.')
@@ -44,6 +45,9 @@ config_flags.DEFINE_config_file('agent', 'agents/gciql.py', lock_config=False)
 
 def main(_):
     # Set up logger.
+    os.environ['MUJOCO_GL'] = 'egl'
+    if 'SLURM_STEP_GPUS' in os.environ:
+        os.environ['EGL_DEVICE_ID'] = os.environ['SLURM_STEP_GPUS']
     exp_name = get_exp_name(FLAGS.seed)
     setup_wandb(project='OGBench', group=FLAGS.run_group, name=exp_name)
 
@@ -55,6 +59,7 @@ def main(_):
 
     # Set up environment and dataset.
     config = FLAGS.agent
+    
     env, train_dataset, val_dataset = make_env_and_datasets(FLAGS.env_name, frame_stack=config['frame_stack'])
 
     dataset_class = {

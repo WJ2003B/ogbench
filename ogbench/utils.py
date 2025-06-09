@@ -7,7 +7,7 @@ from tqdm import tqdm
 
 from ogbench.relabel_utils import add_oracle_reps, relabel_dataset
 
-DEFAULT_DATASET_DIR = '~/.ogbench/data'
+DEFAULT_DATASET_DIR = '/global/scratch/users/seohong/data/ogcrl/'
 DATASET_URL = 'https://rail.eecs.berkeley.edu/datasets/ogbench'
 
 

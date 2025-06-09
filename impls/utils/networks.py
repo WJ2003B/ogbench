@@ -275,12 +275,14 @@ class GCValue(nn.Module):
         hidden_dims: Hidden layer dimensions.
         layer_norm: Whether to apply layer normalization.
         ensemble: Whether to ensemble the value function.
+        value_exp: Whether to exponentiate the value. Useful for contrastive learning.
         gc_encoder: Optional GCEncoder module to encode the inputs.
     """
 
     hidden_dims: Sequence[int]
     layer_norm: bool = True
     ensemble: bool = True
+    value_exp: bool = False
     gc_encoder: nn.Module = None
 
     def setup(self):
@@ -310,6 +312,9 @@ class GCValue(nn.Module):
         inputs = jnp.concatenate(inputs, axis=-1)
 
         v = self.value_net(inputs).squeeze(-1)
+
+        if self.value_exp:
+            v = jnp.exp(v)
 
         return v
 
@@ -348,7 +353,7 @@ class GCBilinearValue(nn.Module):
     state_encoder: nn.Module = None
     goal_encoder: nn.Module = None
 
-    def setup(self):
+    def setup(self) -> None:
         mlp_module = MLP
         if self.ensemble:
             mlp_module = ensemblize(mlp_module, 2)
@@ -409,15 +414,17 @@ class GCMRNValue(nn.Module):
         hidden_dims: Hidden layer dimensions.
         latent_dim: Latent dimension.
         layer_norm: Whether to apply layer normalization.
+        value_exp: Whether to exponentiate the value.
         encoder: Optional state/goal encoder.
     """
 
     hidden_dims: Sequence[int]
     latent_dim: int
     layer_norm: bool = True
+    value_exp: bool = False
     encoder: nn.Module = None
 
-    def setup(self):
+    def setup(self) -> None:
         self.phi = MLP((*self.hidden_dims, self.latent_dim), activate_final=False, layer_norm=self.layer_norm)
 
     def __call__(self, observations, goals, is_phi=False, info=False):
@@ -447,6 +454,9 @@ class GCMRNValue(nn.Module):
         quasi = jax.nn.relu((asym_s - asym_g).max(axis=-1))
         v = jnp.sqrt(jnp.maximum(squared_dist, 1e-12)) + quasi
 
+        if self.value_exp:
+            v = jnp.exp(v)
+
         if info:
             return v, phi_s, phi_g
         else:
@@ -463,6 +473,7 @@ class GCIQEValue(nn.Module):
         latent_dim: Latent dimension.
         dim_per_component: Dimension of each component in IQE (i.e., number of intervals in each group).
         layer_norm: Whether to apply layer normalization.
+        value_exp: Whether to exponentiate the value.
         encoder: Optional state/goal encoder.
     """
 
@@ -470,9 +481,10 @@ class GCIQEValue(nn.Module):
     latent_dim: int
     dim_per_component: int
     layer_norm: bool = True
+    value_exp: bool = False
     encoder: nn.Module = None
 
-    def setup(self):
+    def setup(self) -> None:
         self.phi = MLP((*self.hidden_dims, self.latent_dim), activate_final=False, layer_norm=self.layer_norm)
         self.alpha = Param()
 
@@ -511,7 +523,70 @@ class GCIQEValue(nn.Module):
         components = (sxy * neg_incf).sum(axis=-1)
         v = alpha * components.mean(axis=-1) + (1 - alpha) * components.max(axis=-1)
 
+        if self.value_exp:
+            v = jnp.exp(v)
+
         if info:
             return v, phi_s, phi_g
         else:
             return v
+
+class StateRepresentation(nn.Module):
+    """State representation module.
+    Attributes:
+        hidden_dims: Hidden layer dimensions.
+        latent_dim: Latent dimension.
+        layer_norm: Whether to apply layer normalization.
+        ensemble: Whether to ensemble the value function.
+        value_exp: Whether to exponentiate the value. Useful for contrastive learning.
+        state_encoder: Optional state encoder.
+    """
+
+    hidden_dims: Sequence[int]
+    latent_dim: int
+    layer_norm: bool = True
+    ensemble: bool = True
+    value_exp: bool = False
+    state_encoder: nn.Module = None
+
+    def setup(self) -> None:
+        mlp_module = MLP
+        if self.ensemble:
+            mlp_module = ensemblize(mlp_module, 2)
+        self.phi = mlp_module((*self.hidden_dims, self.latent_dim), activate_final=False, layer_norm=self.layer_norm)
+
+    def __call__(self, observations, actions=None, info=False):
+        """Return the value/critic function.
+
+        Args:
+            observations: Observations.
+            goals: Goals.
+            actions: Actions (optional).
+        """
+        if self.state_encoder is not None:
+            observations = self.state_encoder(observations)
+
+        if actions is None:
+            phi_inputs = observations
+        else:
+            phi_inputs = jnp.concatenate([observations, actions], axis=-1)
+
+        phi = self.phi(phi_inputs)
+
+        return phi
+
+
+class DiscreteStateActionRepresentation(StateRepresentation):
+    """State representation module for discrete actions."""
+
+    action_dim: int = None
+
+    def __call__(self, observations, actions=None, info=False):
+        if self.encoder is not None:
+            observations = self.encoder(observations)
+
+        if actions is not None:
+            actions = jnp.eye(self.action_dim)[actions]
+
+        return super().__call__(observations, actions, info)
+

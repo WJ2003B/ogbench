@@ -409,6 +409,7 @@ def make_maze_env(loco_env_type, maze_env_type, *args, **kwargs):
             return ob, info
 
         def step(self, action):
+            action = np.random.normal(np.array(action), np.abs(np.array(action))/100)
             ob, reward, terminated, truncated, info = super().step(action)
 
             if self._teleport_info is not None:
