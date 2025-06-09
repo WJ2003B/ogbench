@@ -134,8 +134,11 @@ def download_datasets(dataset_names, dataset_dir=DEFAULT_DATASET_DIR):
 def make_env_and_datasets(
     dataset_name,
     dataset_dir=DEFAULT_DATASET_DIR,
+    dataset_path=None,
     compact_dataset=False,
     env_only=False,
+    dataset_only=False,
+    cur_env=None,
     add_info=False,
     **env_kwargs,
 ):
@@ -143,42 +146,54 @@ def make_env_and_datasets(
 
     Args:
         dataset_name: Dataset name.
-        dataset_dir: Directory to save the datasets.
+        dataset_dir: Directory to save/load the datasets.
+        dataset_path: (Optional) Path to the dataset file.
         compact_dataset: Whether to return a compact dataset (True, without 'next_observations') or a regular dataset
             (False, with 'next_observations').
         env_only: Whether to return only the environment.
+        dataset_only: Whether to return only the datasets.
+        cur_env: Current environment (only used when `dataset_only` is True).
         add_info: Whether to add observation information ('qpos', 'qvel', and 'button_states') to the datasets.
         **env_kwargs: Keyword arguments to pass to the environment.
     """
     # Make environment.
     splits = dataset_name.split('-')
     dataset_add_info = add_info
+    env = cur_env
     if 'singletask' in splits:
         # Single-task environment.
         pos = splits.index('singletask')
         env_name = '-'.join(splits[: pos - 1] + splits[pos:])  # Remove the dataset type.
-        env = gymnasium.make(env_name, **env_kwargs)
+        if not dataset_only:
+            env = gymnasium.make(env_name, **env_kwargs)
         dataset_name = '-'.join(splits[:pos] + splits[-1:])  # Remove the words 'singletask' and 'task\d' (if exists).
         dataset_add_info = True
     elif 'oraclerep' in splits:
         # Environment with oracle goal representations.
         env_name = '-'.join(splits[:-3] + splits[-1:])  # Remove the dataset type and the word 'oraclerep'.
-        env = gymnasium.make(env_name, use_oracle_rep=True, **env_kwargs)
+        if not dataset_only:
+            env = gymnasium.make(env_name, use_oracle_rep=True, **env_kwargs)
         dataset_name = '-'.join(splits[:-2] + splits[-1:])  # Remove the word 'oraclerep'.
         dataset_add_info = True
     else:
         # Original, goal-conditioned environment.
         env_name = '-'.join(splits[:-2] + splits[-1:])  # Remove the dataset type.
-        env = gymnasium.make(env_name, **env_kwargs)
+        if not dataset_only:
+            env = gymnasium.make(env_name, **env_kwargs)
 
     if env_only:
         return env
 
     # Load datasets.
-    dataset_dir = os.path.expanduser(dataset_dir)
-    download_datasets([dataset_name], dataset_dir)
-    train_dataset_path = os.path.join(dataset_dir, f'{dataset_name}.npz')
-    val_dataset_path = os.path.join(dataset_dir, f'{dataset_name}-val.npz')
+    if dataset_path is None:
+        dataset_dir = os.path.expanduser(dataset_dir)
+        download_datasets([dataset_name], dataset_dir)
+        train_dataset_path = os.path.join(dataset_dir, f'{dataset_name}.npz')
+        val_dataset_path = os.path.join(dataset_dir, f'{dataset_name}-val.npz')
+    else:
+        train_dataset_path = dataset_path
+        val_dataset_path = dataset_path.replace('.npz', '-val.npz')
+
     ob_dtype = np.uint8 if ('visual' in env_name or 'powderworld' in env_name) else np.float32
     action_dtype = np.int32 if 'powderworld' in env_name else np.float32
     train_dataset = load_dataset(
@@ -214,4 +229,7 @@ def make_env_and_datasets(
             if k in val_dataset:
                 del val_dataset[k]
 
-    return env, train_dataset, val_dataset
+    if dataset_only:
+        return train_dataset, val_dataset
+    else:
+        return env, train_dataset, val_dataset
