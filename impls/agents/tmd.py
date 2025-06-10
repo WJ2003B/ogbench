@@ -114,7 +114,8 @@ class TMDAgent(flax.struct.PyTreeNode):
         delta = dist - dist_next
         mask = delta > t
         delta = jnp.where(mask, t, delta)
-        divergence = gamma * jnp.exp(delta) - dist
+        divergence = jnp.where(mask, delta, gamma * jnp.exp(delta) - dist)
+
         dw = self.config['diag_backup']
         divergence = divergence * (1 - dw) + jnp.diagonal(divergence, axis1=1, axis2=2)[..., None] * dw
 
@@ -149,15 +150,24 @@ class TMDAgent(flax.struct.PyTreeNode):
     @jax.jit
     def actor_loss(self, batch, grad_params, rng=None):
         # Maximize log Q if actor_log_q is True (which is default).
-
-        dist = self.network.select('actor')(batch['observations'], batch['actor_goals'], params=grad_params)
+        if self.config['use_latent']:
+            psi_s, psi_g = self.network.select('psi')(batch['observations'], params=grad_params), self.network.select('psi')(batch['actor_goals'], params=grad_params)
+            if len(psi_s.shape) == 3:
+                psi_s = jnp.mean(psi_s, axis=0)
+                psi_g = jnp.mean(psi_g, axis=0)
+            if self.config['freeze_enc_for_actor_grad']:
+                psi_s, psi_g = jax.lax.stop_gradient(psi_s), jax.lax.stop_gradient(psi_g)
+            dist = self.network.select('actor')(psi_s, psi_g, params=grad_params)
+        else:
+            dist = self.network.select('actor')(batch['observations'], batch['actor_goals'], params=grad_params)
         if self.config['const_std']:
             q_actions = jnp.clip(dist.mode(), -1, 1)
         else:
             q_actions = jnp.clip(dist.sample(seed=rng), -1, 1)
 
-        # actions_roll = jnp.roll(batch['actions'], shift=1, axis=0)
-        # assert q_actions.shape == actions_roll.shape
+        actions_roll = jnp.roll(batch['actions'], shift=1, axis=0)
+
+        assert q_actions.shape == actions_roll.shape
 
         phi = self.network.select('phi')(batch['observations'], q_actions)
         psi = self.network.select('psi')(batch['actor_goals'])
@@ -219,7 +229,14 @@ class TMDAgent(flax.struct.PyTreeNode):
         seed=None,
         temperature=1.0,
     ):
-        dist = self.network.select('actor')(observations, goals, temperature=temperature)
+        if self.config['use_latent']:
+            psi_s, psi_g = self.network.select('psi')(observations), self.network.select('psi')(goals)
+            if len(psi_s.shape) == 2: # in inference, we don't have batch dimension
+                psi_s = jnp.mean(psi_s, axis=0)
+                psi_g = jnp.mean(psi_g, axis=0)
+            dist = self.network.select('actor')(psi_s, psi_g, temperature=temperature)
+        else:
+            dist = self.network.select('actor')(observations, goals, temperature=temperature)
         actions = dist.sample(seed=seed)
         if not self.config['discrete']:
             actions = jnp.clip(actions, -1, 1)
@@ -304,11 +321,19 @@ class TMDAgent(flax.struct.PyTreeNode):
                 alpha_raw=(Param(), ()),
             )
         else:
-            network_info = dict(
-                actor=(actor_def, (ex_observations, ex_goals)),
-                phi=(phi_def, (ex_observations, ex_actions)),
-                psi=(psi_def, (ex_goals,)),
-            )
+            if config['use_latent']:
+                embed = jnp.zeros((1, config["latent_dim"]))
+                network_info = dict(
+                    actor=(actor_def, (embed, embed)),
+                    phi=(phi_def, (ex_observations, ex_actions)),
+                    psi=(psi_def, (ex_goals,)),
+                )
+            else:
+                network_info = dict(
+                    actor=(actor_def, (ex_observations, ex_goals)),
+                    phi=(phi_def, (ex_observations, ex_actions)),
+                    psi=(psi_def, (ex_goals,)),
+                )
         networks = {k: v[0] for k, v in network_info.items()}
         network_args = {k: v[1] for k, v in network_info.items()}
 
@@ -326,7 +351,7 @@ def get_config():
             # Agent hyperparameters.
             agent_name='tmd',  # Agent name.
             lr=3e-4,
-            components=2,  # Number of components in MRN.
+            components=8,  # Number of components in MRN.
             batch_size=512,  # Batch size.
             actor_hidden_dims=(512, 512, 512),  # Actor network hidden dimensions.
             value_hidden_dims=(512, 512, 512),  # Value network hidden dimensions.
@@ -355,6 +380,8 @@ def get_config():
             gc_negative=False,  # Unused (defined for compatibility with GCDataset).
             p_aug=0.0,  # Probability of applying image augmentation.
             use_iqe=False,  # Whether to use IQE distance or MRN distance
+            use_latent=True, # Whether to use latent for policy action sampling
+            freeze_enc_for_actor_grad=False, # Whether to stop grad for actor when using encoder
             frame_stack=ml_collections.config_dict.placeholder(int),  # Number of frames to stack.
         )
     )
