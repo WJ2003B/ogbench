@@ -25,27 +25,27 @@ class TMDAgent(flax.struct.PyTreeNode):
     config: Any = nonpytree_field()
 
     @jax.jit
-    def mrn_distance_component(self, x, y):
-        eps = 1e-6
-        d = x.shape[-1]
-        x_prefix = x[..., : d // 2]
-        x_suffix = x[..., d // 2 :]
-        y_prefix = y[..., : d // 2]
-        y_suffix = y[..., d // 2 :]
-        max_component = jnp.max(jax.nn.relu(x_prefix - y_prefix), axis=-1)
-        l2_component = jnp.sqrt(jnp.square(x_suffix - y_suffix).sum(axis=-1) + eps)
-        assert max_component.shape == l2_component.shape
-        return max_component + l2_component
-
-    @jax.jit
     def mrn_distance(self, x, y):
         K = self.config['components']
+        assert x.shape[-1] % K == 0
+        # K = 8
+        @jax.jit
+        def mrn_distance_component(x, y):
+            eps = 1e-6
+            d = x.shape[-1]
+            mask = jnp.arange(d) < d // 2
+            max_component = jnp.max(jax.nn.relu((x - y) * mask), axis=-1)
+            l2_component = jnp.sqrt(jnp.square((x - y) * (1 - mask)).sum(axis=-1) + eps)
+            assert max_component.shape == l2_component.shape
+            return max_component + l2_component
 
-        x_split = jnp.stack(jnp.array_split(x, K, axis=-1), axis=-1)
-        y_split = jnp.stack(jnp.array_split(y, K, axis=-1), axis=-1)
-        dists = [self.mrn_distance_component(x_split[..., i], y_split[..., i]) for i in range(K)]
+        x_split = jnp.stack(jnp.split(x, K, axis=-1), axis=-1)
+        y_split = jnp.stack(jnp.split(y, K, axis=-1), axis=-1)
+        dists = jax.vmap(mrn_distance_component, in_axes=(-1, -1), out_axes=-1)(x_split, y_split)
+        # print(dists.shape)
+        #[self.mrn_distance_component(x_split[..., i], y_split[..., i]) for i in range(K)]
 
-        return jnp.stack(dists, axis=-1).mean(axis=-1)
+        return dists.mean(axis=-1)
 
     def iqe_distance(self, x, y):
         k = self.config['components']  
@@ -91,6 +91,8 @@ class TMDAgent(flax.struct.PyTreeNode):
             psi_g = psi_g[None, ...]
 
         dist = self.distance(phi[:, :, None], psi_g[:, None, :])
+        # dist = jnp.einsum("eik,ejk->ije", phi, psi_g) / jnp.sqrt(phi.shape[-1])
+        # dist = jnp.transpose(dist, (2, 0, 1))
         logits = -dist / jnp.sqrt(phi.shape[-1])
         # logits.shape is (e, B, B) with one term for positive pair and (B - 1) terms for negative pairs in each row.
 
@@ -100,31 +102,36 @@ class TMDAgent(flax.struct.PyTreeNode):
         )(logits)
         contrastive_loss = jnp.mean(contrastive_loss)
         action_dist = self.distance(psi_s, phi)
+        # action_dist = jnp.einsum("eik,ejk->ije", psi_s, phi) / jnp.sqrt(phi.shape[-1])
 
         action_invariance_loss = jnp.mean(action_dist)
 
         dist_next = self.distance(psi_next[:, :, None], psi_g[:, None, :])
+        # dist_next = jnp.einsum("eik,ejk->ije", psi_next, psi_g) / jnp.sqrt(psi_next.shape[-1])
+        # dist_next = jnp.transpose(dist_next, (2, 0, 1))
 
         t = self.config['t']
         gamma = self.config['discount']
         if self.config['stopgrad_psi_backup']:
+            # dist = jnp.einsum("eik,ejk->ije", phi, jax.lax.stop_gradient(psi_g)) / jnp.sqrt(phi.shape[-1])
+            # dist = jnp.transpose(dist, (2, 0, 1))
             dist = self.distance(phi[:, :, None], jax.lax.stop_gradient(psi_g[:, None, :]))
         dist_next = jax.lax.stop_gradient(dist_next)
 
         delta = dist - dist_next
         mask = delta > t
-        delta = jnp.where(mask, t, delta)
-        divergence = jnp.where(mask, delta, gamma * jnp.exp(delta) - dist)
+        delta_clipped = jnp.where(mask, t, delta)
+        divergence = jnp.where(mask, delta, gamma * jnp.exp(delta_clipped) - dist)
 
         dw = self.config['diag_backup']
         divergence = divergence * (1 - dw) + jnp.diagonal(divergence, axis1=1, axis2=2)[..., None] * dw
-
-        divergence = jnp.clip(divergence, None, self.config['t'])
         backup_loss = jnp.mean(divergence)
+        # backup_loss = jnp.log(backup_loss + 1 - jax.lax.stop_gradient(jnp.minimum(backup_loss, 1)))
+        divergence = jnp.clip(divergence, None, self.config['t'])
 
         critic_loss = (
             contrastive_loss
-            + self.config['zeta'] * action_invariance_loss
+            + action_invariance_loss
             + self.config['zeta'] * backup_loss
         )
 
@@ -380,7 +387,7 @@ def get_config():
             gc_negative=False,  # Unused (defined for compatibility with GCDataset).
             p_aug=0.0,  # Probability of applying image augmentation.
             use_iqe=False,  # Whether to use IQE distance or MRN distance
-            use_latent=True, # Whether to use latent for policy action sampling
+            use_latent=False, # Whether to use latent for policy action sampling
             freeze_enc_for_actor_grad=False, # Whether to stop grad for actor when using encoder
             frame_stack=ml_collections.config_dict.placeholder(int),  # Number of frames to stack.
         )
