@@ -1,7 +1,9 @@
 import json
 import os
+import glob
 import random
 import time
+import datetime
 from collections import defaultdict
 
 import jax
@@ -31,6 +33,7 @@ flags.DEFINE_integer('train_steps', 1000000, 'Number of training steps.')
 flags.DEFINE_integer('log_interval', 5000, 'Logging interval.')
 flags.DEFINE_integer('eval_interval', 100000, 'Evaluation interval.')
 flags.DEFINE_integer('save_interval', 1000000, 'Saving interval.')
+flags.DEFINE_integer('replace_interval', 4000, 'Replace for a new dataset')
 
 flags.DEFINE_integer('eval_tasks', None, 'Number of tasks to evaluate (None for all).')
 flags.DEFINE_integer('eval_episodes', 20, 'Number of episodes for each task.')
@@ -49,7 +52,10 @@ def main(_):
     if 'SLURM_STEP_GPUS' in os.environ:
         os.environ['EGL_DEVICE_ID'] = os.environ['SLURM_STEP_GPUS']
     exp_name = get_exp_name(FLAGS.seed)
-    setup_wandb(project='OGBench', group=FLAGS.run_group, name=exp_name)
+    exp_name = get_exp_name(FLAGS.seed)
+    seed = exp_name.split("_")[0]
+    exp_name =  FLAGS.dataset_path[:-4].split("/")[-1] + "_" + datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S") + "_" + seed
+    setup_wandb(project='CMD', group=FLAGS.run_group, name=exp_name)
 
     FLAGS.save_dir = os.path.join(FLAGS.save_dir, wandb.run.project, FLAGS.run_group, exp_name)
     os.makedirs(FLAGS.save_dir, exist_ok=True)
@@ -59,9 +65,15 @@ def main(_):
 
     # Set up environment and dataset.
     config = FLAGS.agent
-    
-    env, train_dataset, val_dataset = make_env_and_datasets(FLAGS.env_name, dataset_path=FLAGS.dataset_path, frame_stack=config['frame_stack'])
-
+    cycle = False
+    if FLAGS.dataset_path[-4:] != '.npz':
+        cycle = True
+        dataset_paths = [file for file in sorted(glob.glob(f'{FLAGS.dataset_path}/*.npz')) if '-val.npz' not in file]
+        first_dataset = dataset_paths[0]
+        env, train_dataset, val_dataset = make_env_and_datasets(FLAGS.env_name, dataset_path=first_dataset, frame_stack=config['frame_stack'])
+    else:
+        env, train_dataset, val_dataset = make_env_and_datasets(FLAGS.env_name, dataset_path=FLAGS.dataset_path, frame_stack=config['frame_stack'])
+    idx = 0
     dataset_class = {
         'GCDataset': GCDataset,
         'HGCDataset': HGCDataset,
@@ -159,6 +171,12 @@ def main(_):
         # Save agent.
         if i % FLAGS.save_interval == 0:
             save_agent(agent, FLAGS.save_dir, i)
+        if i % FLAGS.replace_interval == 0 and cycle:
+            idx = (idx + 1) % len(dataset_paths)
+            train_dataset, val_dataset = make_env_and_datasets(FLAGS.env_name, dataset_path=dataset_paths[idx], frame_stack=config['frame_stack'], cur_env=env)
+            train_dataset = dataset_class(Dataset.create(**train_dataset), config)
+            val_dataset = dataset_class(Dataset.create(**val_dataset), config)
+
 
     train_logger.close()
     eval_logger.close()
