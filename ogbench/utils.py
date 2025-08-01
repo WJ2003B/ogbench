@@ -229,7 +229,7 @@ def make_env_and_datasets(
             if k in val_dataset:
                 del val_dataset[k]
 
-    if dataset_only:
+    if dataset_only or cur_env is not None:
         return train_dataset, val_dataset
     else:
         return env, train_dataset, val_dataset
