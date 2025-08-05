@@ -58,12 +58,16 @@ class FQLTMDAgent(flax.struct.PyTreeNode):
         #[self.mrn_distance_component(x_split[..., i], y_split[..., i]) for i in range(K)]
 
         return dists.mean(axis=-1)
+    
+    @jax.jit
+    def get_phi(self, phi_, psi_s):
+        return psi_s + jax.nn.relu(phi_)
 
     def critic_loss(self, batch, grad_params, step):
         """Compute the FQL critic loss."""
         batch_size = batch['observations'].shape[0]
 
-        phi = self.network.select('phi')(batch['observations'], batch['actions'], params=grad_params)
+        phi_ = self.network.select('phi')(batch['observations'], batch['actions'], params=grad_params)
         # concat_obs = jnp.concatenate([batch['observations'], batch['next_observations'], batch['value_goals']], axis=0)
         # reps = self.network.select('psi')(concat_obs, params=grad_params)
         # if len(reps.shape) == 2:
@@ -72,6 +76,8 @@ class FQLTMDAgent(flax.struct.PyTreeNode):
         psi_s = self.network.select('psi')(batch['observations'], params=grad_params)
         psi_next = self.network.select('psi')(batch['next_observations'], params=grad_params)
         psi_g = self.network.select('psi')(batch['value_goals'], params=grad_params)
+
+        phi = self.get_phi(phi_, psi_s)
 
         if len(phi.shape) == 2:  # Non-ensemble
             phi = phi[None, ...]
@@ -226,9 +232,11 @@ class FQLTMDAgent(flax.struct.PyTreeNode):
 
         # Q loss.
         actor_actions = jnp.clip(actor_actions, -1, 1)
-        phi = self.network.select('phi')(batch['observations'], actor_actions)
-        psi = self.network.select('psi')(batch['actor_goals'])
-        q1, q2 = -self.mrn_distance(phi, psi)
+        phi_ = self.network.select('phi')(batch['observations'], actor_actions)
+        psi_s = self.network.select('psi')(batch['observations'])
+        psi_g = self.network.select('psi')(batch['actor_goals'])
+        phi = self.get_phi(phi_, psi_s)
+        q1, q2 = -self.mrn_distance(phi, psi_g)
         q = jnp.minimum(q1, q2)
 
         q_loss = -q.mean()
